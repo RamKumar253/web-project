@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="utf-8" />
+
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<title>Blogify Blocking Site</title>
+
+<style>
+
+/* --- unchanged UI (kept same as your original) --- */
+
+body {margin:0;font-family:'Segoe UI',sans-serif;background:linear-gradient(-45deg,#ff9a9e,#fad0c4,#a1c4fd,#c2e9fb);background-size:400% 400%;animation:gradientBG 12s ease infinite;display:flex;justify-content:center;padding:20px;min-height:100vh;transition:background 0.4s,color 0.4s;}
+
+@keyframes gradientBG{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+
+.container{width:100%;max-width:550px;background:rgba(255,255,255,0.95);border-radius:20px;padding:20px 25px;box-shadow:0 10px 25px rgba(0,0,0,0.25);}
+
+h1{text-align:center;color:#6C63FF;margin-bottom:20px;} h3{color:#FF6F91;margin-top:20px;}
+
+input,textarea,button{width:100%;padding:10px;margin:8px 0;border-radius:10px;font-size:15px;}
+
+input,textarea{border:2px solid #6C63FF;}
+
+input:focus,textarea:focus{border-color:#FF6F91;outline:none;box-shadow:0 0 8px rgba(255,111,145,0.5);}
+
+button{border:none;cursor:pointer;color:#fff;font-weight:bold;background:linear-gradient(45deg,#6C63FF,#FF6F91);}
+
+button:hover{transform:scale(1.05);box-shadow:0 4px 12px rgba(0,0,0,0.25);}
+
+.delete-btn{background:#FF1744;} .like-btn{background:#FF6F91;} .show-btn{background:#29B6F6;} .edit-btn{background:#4CAF50;}
+
+.blog{background:#fff;border-radius:15px;padding:15px;margin:15px 0;box-shadow:0 3px 10px rgba(0,0,0,0.15);}
+
+.blog h2{color:#6C63FF;} .date{font-size:12px;color:gray;margin-bottom:10px;}
+
+.blog-image{max-width:100%;border-radius:10px;margin:10px 0;} .comment{background:#f3e8ff;padding:8px;margin:5px 0;border-radius:8px;font-size:14px;}
+
+.comment-date{font-size:11px;color:#555;margin-left:5px;} #toast{visibility:hidden;min-width:250px;background:#333;color:#fff;text-align:center;border-radius:8px;padding:12px;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:1;font-size:14px;}
+
+#toast.show{visibility:visible;animation:fadein 0.5s,fadeout 0.5s 2.5s;} @keyframes fadein{from{bottom:0;opacity:0;}to{bottom:20px;opacity:1;}} @keyframes fadeout{from{bottom:20px;opacity:1;}to{bottom:0;opacity:0;}}
+
+.dark-mode{background:#222;color:#eee;}
+
+.dark-mode .container{background:rgba(34,34,34,0.9);}
+
+#themeToggle{position:fixed;top:15px;right:15px;padding:8px 12px;background:#6C63FF;color:#fff;border:none;border-radius:8px;cursor:pointer;}
+
+@media(max-width:600px){.container{padding:15px 20px;}input,textarea,button{font-size:14px;}}
+
+/* small spinner for inline feedback (keeps UI intact) */
+
+.ai-spinner{display:inline-block;width:18px;height:18px;border-radius:50%;border:3px solid rgba(255,255,255,0.3);border-top-color:rgba(255,255,255,0.9);animation:spin 0.8s linear infinite;margin-left:10px;vertical-align:middle;}
+
+@keyframes spin{to{transform:rotate(360deg);}}
+
+</style>
+
+</head>
+
+<body>
+
+  <!-- Theme toggle -->
+
+  <button id="themeToggle">🌙</button>
+
+
+
+<div class="container">
+
+  <h1>Blogify Blocking Site</h1>
+
+
+
+  <!-- Page 1 -->
+
+  <div id="page1">
+
+    <h3>Create Blog</h3>
+
+    <input type="text" id="newTitle" placeholder="Title">
+
+    <textarea id="newContent" placeholder="Content"></textarea>
+
+    <input type="file" id="newImage" accept="image/*">
+
+    <img id="previewBlogImg" style="display:none;max-width:100%;margin:10px 0;">
+
+    <button onclick="createBlog()">create blog</button>
+
+    <input type="text" id="searchBar" placeholder="Search blogs..." onkeyup="searchBlogs()">
+
+  </div>
+
+
+
+  <!-- Page 2 -->
+
+  <div id="page2" style="display:none;">
+
+    <h3>Blog Details</h3>
+
+    <div id="blogs"></div>
+
+    <button onclick="goBack()">Back</button>
+
+  </div>
+
+</div>
+
+
+
+<div id="toast"></div>
+
+
+
+<script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
+
+<script>
+
+/* ----------------- initialization (unchanged) ----------------- */
+
+emailjs.init("DGG7nDiYQUgY23kG4");
+
+
+
+let blogs=[]; 
+
+let userLoggedIn=true; 
+
+let likedIndexes=new Set(); 
+
+let darkMode=false;
+
+
+
+function save(){ localStorage.setItem('blogs',JSON.stringify(blogs)); }
+
+function load(){ blogs=JSON.parse(localStorage.getItem('blogs'))||[]; }
+
+function showToast(msg){ const t=document.getElementById("toast"); t.innerHTML=msg; t.className="show"; setTimeout(()=>{t.className=t.className.replace("show","");},3000); }
+
+
+
+document.getElementById('newImage').addEventListener('change', e=>{
+
+  const f=e.target.files[0]; const p=document.getElementById('previewBlogImg');
+
+  if(f){ const r=new FileReader(); r.onload=ev=>{p.src=ev.target.result;p.style.display='block';}; r.readAsDataURL(f);} else p.style.display='none';
+
+});
+
+
+
+/* ----------------- blog CRUD (same structure) ----------------- */
+
+function createBlog(){
+
+  const title=document.getElementById('newTitle').value.trim();
+
+  const content=document.getElementById('newContent').value.trim();
+
+  if(!title||!content) return alert("Enter title & content!");
+
+  const img=document.getElementById('previewBlogImg').src||'';
+
+  const date=new Date().toLocaleString();
+
+  blogs.push({title,content,image:img,comments:[],likes:0,date,showHistory:false});
+
+  save();
+
+  document.getElementById('newTitle').value='';
+
+  document.getElementById('newContent').value='';
+
+  document.getElementById('newImage').value='';
+
+  document.getElementById('previewBlogImg').style.display='none';
+
+  showToast("🎉 Blog created!");
+
+  if(!userLoggedIn){ alert("❌ You cannot access this content."); return; }
+
+  document.getElementById('page1').style.display='none';
+
+  document.getElementById('page2').style.display='block';
+
+  loadBlogs();
+
+  window.scrollTo({top:0,behavior:'smooth'});
+
+}
+
+
+
+function goBack(){ document.getElementById('page1').style.display='block'; document.getElementById('page2').style.display='none'; }
+
+
+
+function renderComments(i){
+
+  const blog=blogs[i];
+
+  const newDiv=document.getElementById(new-comments-${i});
+
+  const histDiv=document.getElementById(history-comments-${i});
+
+  newDiv.innerHTML=''; histDiv.innerHTML='';
+
+  blog.comments.forEach((c,ci)=>{
+
+    const cd=document.createElement('div'); cd.className='comment';
+
+    cd.innerHTML=<strong>${c.name}:</strong> ${c.text} <span class="comment-date">(${c.date})</span>;
+
+    if(ci>=blog.comments.length-3) newDiv.appendChild(cd);
+
+    else histDiv.appendChild(cd);
+
+  });
+
+  histDiv.style.display = blog.showHistory ? 'block' : 'none';
+
+}
+
+
+
+function generateOTP(){ return Math.floor(100000 + Math.random() * 900000); }
+
+
+
+function addComment(i){
+
+  const name=document.getElementById(cName-${i}).value.trim()||'Anon';
+
+  const text=document.getElementById(cInput-${i}).value.trim();
+
+  if(!text || text.length < 2) return showToast("⚠ Comment too short!");
+
+  const date=new Date().toLocaleString();
+
+  const otp = generateOTP();
+
+
+
+  blogs[i].comments.push({name,text,date});
+
+  save(); renderComments(i);
+
+  document.getElementById(cInput-${i}).value='';
+
+  showToast("💬 Comment added!");
+
+
+
+  emailjs.send("service_2mcrp1z","template_ejmo0cg",{
+
+    to_email: "ramkumar7200826338@gmail.com",
+
+    commenter_name: name,
+
+    comment_text: text,
+
+    comment_date: date,
+
+    otp_code: otp
+
+  }).then(()=>{ console.log("✅ Email sent!"); })
+
+    .catch(err=>{ console.error("❌ Email failed:", err); });
+
+}
+
+
+
+function deleteBlog(i){ 
+
+  if(confirm("Delete this blog?")){ 
+
+    blogs.splice(i,1); 
+
+    save(); 
+
+    loadBlogs(); 
+
+    showToast("🗑 Blog deleted!");
+
+    window.scrollTo({top:0,behavior:'smooth'});
+
+  } 
+
+}
+
+
+
+function likeBlog(i){
+
+  if(likedIndexes.has(i)) return showToast("❤ You already liked this!");
+
+  blogs[i].likes++; 
+
+  likedIndexes.add(i);
+
+  save(); 
+
+  loadBlogs();
+
+}
+
+
+
+function editBlog(i){
+
+  const b=blogs[i];
+
+  const newTitle=prompt("Edit Title:", b.title);
+
+  const newContent=prompt("Edit Content:", b.content);
+
+  if(newTitle && newContent){
+
+    b.title=newTitle; b.content=newContent; 
+
+    save(); 
+
+    loadBlogs(); 
+
+    showToast("✏ Blog updated!");
+
+  }
+
+}
+
+
+
+function toggleHistory(i){ blogs[i].showHistory=!blogs[i].showHistory; renderComments(i); }
+
+
+
+function searchBlogs(){
+
+  const q=document.getElementById('searchBar').value.toLowerCase();
+
+  const div=document.getElementById('blogs'); div.innerHTML='';
+
+  blogs.filter(b=>b.title.toLowerCase().includes(q)||b.content.toLowerCase().includes(q))
+
+  .forEach((b,i)=>{
+
+    const d=document.createElement('div'); d.className='blog';
+
+    d.innerHTML = (b.image ? '<img src="' + b.image + '" class="blog-image">' : '') + '<h2>' + b.title + '</h2><p>' + b.content + '</p>';
+
+    div.appendChild(d);
+
+  });
+
+}
+
+
+
+/* ----------------- AI IMPROVE FEATURE (real + fallback) ----------------- */
+
+/*
+
+ Behavior:
+
+  - If localStorage.OPENAI_API_KEY exists, call OpenAI Chat Completions (via fetch)
+
+  - If not, prompt user for an API key (optional). If user cancels or doesn't provide, use offline fake generator.
+
+  - The UI remains the same. A small spinner is shown in the button while waiting.
+
+*/
+
+
+
+/* Helper: show inline spinner on clicked button (no UI layout change) */
+
+function addSpinnerToButton(btn) {
+
+  const s = document.createElement('span');
+
+  s.className = 'ai-spinner';
+
+  s.dataset.aiSpinner = '1';
+
+  btn.appendChild(s);
+
+}
+
+function removeSpinnerFromButton(btn) {
+
+  const sp = btn.querySelector('[data-ai-spinner="1"]');
+
+  if (sp) sp.remove();
+
+}
+
+
+
+/* Main entrypoint called by button in each blog card */
+
+async function improveBlogContent(i, btnRef) {
+
+  // btnRef is optional — when called from generated HTML we pass a button element
+
+  const button = btnRef || document.createElement('button');
+
+  // show small spinner for feedback (no layout change)
+
+  try {
+
+    addSpinnerToButton(button);
+
+  } catch(e){/** ignore spinner errors **/}
+
+
+
+  const b = blogs[i];
+
+  showToast("🤖 Improving your content...");
+
+
+
+  // 1) check if user provided API key (stored in localStorage)
+
+  let apikey = localStorage.getItem('OPENAI_API_KEY');
+
+
+
+  // if not present, ask user once (keeps UI unchanged): prompt is allowed because user triggered action
+
+  if(!apikey) {
+
+    // Offer user to paste their OpenAI API key (or cancel to use offline mock)
+
+    apikey = prompt("Paste your OpenAI API key to use real AI (cancel to use offline mock):");
+
+    if(apikey && apikey.trim()) {
+
+      localStorage.setItem('OPENAI_API_KEY', apikey.trim());
+
+    } else {
+
+      apikey = null;
+
+    }
+
+  }
+
+
+
+  try {
+
+    let improvedText;
+
+    if(apikey) {
+
+      // Call OpenAI Chat Completions (model and payload can be adjusted)
+
+      improvedText = await callOpenAIImprove(apikey, b.title, b.content);
+
+    } else {
+
+      // fallback offline mock improvement
+
+      improvedText = await fakeAIGenerate(b.content);
+
+    }
+
+
+
+    // update blog content
+
+    b.content = improvedText;
+
+    save();
+
+    loadBlogs();
+
+    showToast("✨ AI improved your blog content!");
+
+  } catch (err) {
+
+    console.error("AI improve failed:", err);
+
+    showToast("⚠ AI improvement failed. See console for details.");
+
+  } finally {
+
+    try { removeSpinnerFromButton(button); } catch(e){}
+
+  }
+
+}
+
+
+
+/* Offline fallback: quick text fixes & note */
+
+function fakeAIGenerate(text) {
+
+  return new Promise(resolve => {
+
+    setTimeout(() => {
+
+      const cleaned = text
+
+        .replace(/\bi\b/g, "I")
+
+        .replace(/\bim\b/gi, "I'm")
+
+        .replace(/\bu\b/gi, "you")
+
+        .replace(/\bur\b/gi, "your")
+
+        .replace(/\s{2,}/g, " ");
+
+      resolve(cleaned + "\n\n🧠 (Improved by offline AI fallback: basic grammar & clarity)");
+
+    }, 900);
+
+  });
+
+}
+
+
+
+/* Real OpenAI call:
+
+   - Uses Chat Completions endpoint
+
+   - Model: gpt-4o-mini (or change to whichever you prefer)
+
+   - Sends system + user messages to instruct rewriting/improving
+
+   - IMPORTANT: direct call from browser exposes the API key to the client. Prefer server-proxy in production.
+
+*/
+
+async function callOpenAIImprove(apiKey, title, content) {
+
+  // Build prompt
+  const system = "You are a helpful assistant whose job is to improve blog post content for clarity, grammar, style, and conciseness while preserving the author's meaning and tone. Return only the improved content (no extra commentary).";
+  const user = Title: ${title}\n\nPost:\n${content}\n\nPlease provide an improved version of the post, preserving meaning and length (do not add extra sections). Keep formatting as plain text.;
+
+
+
+  // Choose endpoint & model. You can change the model here.
+
+  const endpoint = "https://api.openai.com/v1/chat/completions";
+
+  const model = "gpt-4o-mini"; // change if you'd like (e.g., gpt-4o or gpt-4o-mini-preview)
+
+
+
+  const payload = {
+
+    model,
+
+    messages: [
+
+      { role: "system", content: system },
+
+      { role: "user", content: user }
+
+    ],
+
+    max_tokens: 800,
+
+    temperature: 0.25
+
+  };
+
+
+
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": Bearer ${apiKey}
+    },
+    body: JSON.stringify(payload)
+  });
+
+
+
+  if(!resp.ok) {
+    // try to parse error body for useful message
+    let errText;
+    try { errText = await resp.text(); } catch(e) { errText = resp.statusText; }
+    throw new Error(OpenAI API error: ${resp.status} ${errText});
+  }
+
+
+
+  const data = await resp.json();
+
+  // navigate response depending on API shape
+
+  // chat completions: data.choices[0].message.content
+
+  if(data.choices && data.choices.length>0 && data.choices[0].message && data.choices[0].message.content) {
+
+    return data.choices[0].message.content.trim();
+
+  }
+
+
+
+  // fallback parse
+
+  throw new Error("Unexpected OpenAI response format");
+
+}
+
+
+
+/* ----------------- loadBlogs and rendering (adds AI Improve button only) ----------------- */
+
+function loadBlogs(){
+  const div=document.getElementById('blogs'); div.innerHTML='';
+  blogs.forEach((b,i)=>{
+    const d=document.createElement('div'); d.className='blog';
+    const dummyImage = 'https://via.placeholder.com/300x200?text=' + encodeURIComponent(b.title);
+    // create a wrapper element rather than innerHTML for safety when adding event listeners
+    d.innerHTML = '<img src="' + (b.image || dummyImage) + '" class="blog-image">' + '<h2>' + escapeHtml(b.title) + '</h2><div class="date">' + b.date + '</div><p id="content-' + i + '">' + escapeHtml(b.content).replace(/\n/g,'<br>') + '</p>';
+
+
+
+    // buttons container appended below
+
+    const likeBtn = document.createElement('button'); likeBtn.className='like-btn'; likeBtn.innerText='❤ Like (' + b.likes + ')';
+
+    likeBtn.addEventListener('click',()=>likeBlog(i));
+
+
+
+    const editBtn = document.createElement('button'); editBtn.className='edit-btn'; editBtn.innerText='Edit';
+
+    if(userLoggedIn) editBtn.addEventListener('click',()=>editBlog(i));
+
+    else editBtn.style.display='none';
+
+
+
+    const delBtn = document.createElement('button'); delBtn.className='delete-btn'; delBtn.innerText='Delete';
+
+    delBtn.addEventListener('click',()=>deleteBlog(i));
+
+
+
+    const aiBtn = document.createElement('button'); aiBtn.className='show-btn'; aiBtn.innerText='🤖 AI Improve';
+
+    // Attach click and pass reference to button so spinner can be attached inline
+
+    aiBtn.addEventListener('click',()=>improveBlogContent(i, aiBtn));
+
+
+
+    // comments block (keeps same structure)
+
+    const commentsDiv = document.createElement('div');
+
+    commentsDiv.className='comments';
+
+    commentsDiv.innerHTML = '<strong>Comments:</strong><div id="new-comments-' + i + '"></div><div id="history-comments-' + i + '" style="display:none;"></div>';
+
+    const inputName = document.createElement('input'); inputName.type='text'; inputName.id='cName-' + i; inputName.placeholder='Your name';
+
+    const inputComment = document.createElement('input'); inputComment.type='text'; inputComment.id='cInput-' + i; inputComment.placeholder='Add comment';
+
+    const addCommentBtn = document.createElement('button'); addCommentBtn.innerText='Add Comment';
+
+    addCommentBtn.addEventListener('click',()=>addComment(i));
+
+    const toggleBtn = document.createElement('button'); toggleBtn.className='show-btn'; toggleBtn.innerText='Show History';
+
+    toggleBtn.addEventListener('click',()=>toggleHistory(i));
+
+
+
+    // assemble buttons in order to preserve visual order
+
+    d.appendChild(likeBtn);
+
+    if(userLoggedIn) d.appendChild(editBtn);
+
+    d.appendChild(delBtn);
+
+    d.appendChild(aiBtn);
+
+
+
+    // append comments inputs and buttons
+
+    commentsDiv.appendChild(inputName);
+
+    commentsDiv.appendChild(inputComment);
+
+    commentsDiv.appendChild(addCommentBtn);
+
+    commentsDiv.appendChild(toggleBtn);
+
+    d.appendChild(commentsDiv);
+
+
+
+    div.appendChild(d);
+
+    renderComments(i);
+
+  });
+
+}
+
+
+
+/* tiny helper to escape HTML (prevents XSS when showing content) */
+
+function escapeHtml(unsafe) {
+
+  if(!unsafe && unsafe !== "") return "";
+
+  return unsafe
+
+       .replace(/&/g, "&amp;")
+
+       .replace(/</g, "&lt;")
+
+       .replace(/>/g, "&gt;")
+
+       .replace(/"/g, "&quot;")
+
+       .replace(/'/g, "&#039;");
+
+}
+
+
+
+/* ----------------- theme toggle (unchanged) ----------------- */
+
+document.getElementById('themeToggle').addEventListener('click',()=>{
+
+  darkMode=!darkMode;
+
+  document.body.classList.toggle('dark-mode',darkMode);
+
+  document.getElementById('themeToggle').innerText=darkMode?'☀':'🌙';
+
+});
+
+
+
+/* ----------------- start: load stored blogs ----------------- */
+
+window.onload=()=>{load(); loadBlogs();};
+
+</script>
+
+</body>
+
+
+</html>
